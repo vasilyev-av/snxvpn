@@ -32,7 +32,7 @@ for line in f :
 f.close ()
 
 setup \
-    ( name             = "snxvpn"
+    ( name             = "snxvpn_fix"
     , py_modules       = ['snxconnect', 'snxvpnversion']
     , version          = VERSION
     , description      =
