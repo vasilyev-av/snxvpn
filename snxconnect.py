@@ -222,7 +222,7 @@ class HTML_Requester (object) :
             , userName      = self.args.username
             , selectedRealm = self.args.realm
             , loginType     = self.args.login_type
-            , vpid_prefix   = self.args.vpid_prefix
+            , pin           = self.args.vpid_prefix
             , HeightData    = self.args.height_data
             )
         self.debug (urlencode(d))
@@ -232,14 +232,14 @@ class HTML_Requester (object) :
         self.debug (self.info)
 
         errorMessage = self.soup.select_one(".errorMessage")
-        if errorMessage :
+        if errorMessage and errorMessage.string.strip():
             print ("Error: %s" % errorMessage.string)
             return
 
         while 'MultiChallenge' in self.purl :
             d = self.parse_pw_response ()
             otp = getpass ('One-time Password: ')
-            otp =  rsa.pkcs1.encrypt(self.args.password, rsa.PublicKey(self.modulus, self.exponent))
+            otp =  rsa.pkcs1.encrypt(otp.encode('UTF-8'), rsa.PublicKey(self.modulus, self.exponent))
             otp = ''.join ('%02x' % b_ord (c) for c in reversed (otp))
             d ['password'] = otp
             self.debug ("nextfile: %s" % self.nextfile)
