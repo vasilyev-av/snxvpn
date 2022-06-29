@@ -39,10 +39,8 @@ setup \
         "Command-line utility to connect to a Checkpoint SSL VPN "
     , long_description = ''.join (description)
     , license          = license
-    , author           = "Ralf Schlatterbeck"
-    , author_email     = "rsc@runtux.com"
     , platforms        = 'Linux'
-    , url              = "https://github.com/schlatterbeck/snxvpn"
+    , url              = "https://github.com/dimastbk/snxvpn"
     , scripts          = ['snxconnect']
     , install_requires = [ 'bs4', 'pycrypto', 'lxml', 'rsa' ]
     , classifiers      = \
