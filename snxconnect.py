@@ -28,6 +28,8 @@ from struct            import pack, unpack
 from subprocess        import Popen, PIPE
 from snxvpnversion     import VERSION
 
+CHALLENGE_MAX_COUNT = 5
+
 """ Todo:
     - timeout can be retrieved at /sslvpn/Portal/LoggedIn
       Function to do this is RetrieveTimeoutVal (url_above) in portal
@@ -106,6 +108,7 @@ class HTML_Requester (object) :
             terminate.
         """
         sp  = self.args.snxpath
+        self.debug(sp)
         if self.args.debug :
             snx = Popen (['strace', '-o', 'strace_snx', '-s', '2000', '-p' ,sp, '-Z'], stdin = PIPE, stdout = PIPE, stderr = PIPE)
         else: 
@@ -231,21 +234,46 @@ class HTML_Requester (object) :
         self.debug (self.purl)
         self.debug (self.info)
 
-        errorMessage = self.soup.select_one(".errorMessage")
-        if errorMessage and errorMessage.string.strip():
-            print ("Error: %s" % errorMessage.string)
-            return
+        for errorMessage in self.soup.select(".errorMessage"):
+            if errorMessage and 'style' in errorMessage.attrs and 'none' not in errorMessage['style']:
+                self.debug(self.soup)
+                print ("Error: %s" % errorMessage.string)
+                return
+            if errorMessage and 'style' not in errorMessage.attrs and len(errorMessage.string.strip()) > 0:
+                self.debug(self.soup)
+                print ("Error: %s" % errorMessage.string)
+                return
 
+            
+        whileCount  = 0
         while 'MultiChallenge' in self.purl :
             d = self.parse_pw_response ()
-            otp = getpass ('One-time Password: ')
+            del d['phoneNumbersSelection']
+            del d['SendMethod']
+            if whileCount == 0 and len(self.args.otp_pin) > 0:
+                otp = self.args.otp_pin
+            else:
+                otp = getpass ('One-time Password: ')
+            self.debug ("OTP: %s" % otp)            
             otp =  rsa.pkcs1.encrypt(otp.encode('UTF-8'), rsa.PublicKey(self.modulus, self.exponent))
             otp = ''.join ('%02x' % b_ord (c) for c in reversed (otp))
             d ['password'] = otp
+            d ['pin']      = self.args.vpid_prefix            
             self.debug ("nextfile: %s" % self.nextfile)
             self.debug ("purl: %s" % self.purl)
+            self.debug ("D  %s" % urlencode(d))            
             self.open (data = urlencode (d))
             self.debug ("info: %s" % self.info)
+            self.debug ("purl2: %s" % self.purl)            
+            whileCount += 1
+            if whileCount > CHALLENGE_MAX_COUNT:
+                print("Error: too many attempts")
+                return
+
+        if self.purl.endswith ('Login/ActivateLogin') :
+            print('Closing previous connection')
+            self.open  ('sslvpn/Login/ActivateLogin?ActivateLogin=activate')
+        
         if self.purl.endswith ('Portal/Main') :
             if self.args.save_cookies :
                 self.jar.save (self.args.cookiefile, ignore_discard = True)
@@ -264,6 +292,8 @@ class HTML_Requester (object) :
             if not self.soup.find('span', attrs={'class': 'errorMessage'}):
                 self.debug(self.soup)
             return
+
+
     # end def login
 
     def next_file (self, fname) :
@@ -282,10 +312,12 @@ class HTML_Requester (object) :
     def open (self, filepart = None, data = None, do_soup = True) :
         filepart = filepart or self.nextfile
         url = '/'.join (('%s:/' % self.args.protocol, self.args.host, filepart))
+        self.debug(url)
         if data :
             data = data.encode ('ascii')
         rq = Request (url, data, headers={'User-Agent': self.args.useragent})
         self.f = f = self.opener.open (rq, timeout = 10)
+        self.debug(f)
         if do_soup :
             # Sometimes we get incomplete read. So we read everything
             # the server sent us and hope this is ok. Note: This means
@@ -296,6 +328,7 @@ class HTML_Requester (object) :
             except IncompleteRead as e:
                 page = e.partial
             self.soup = BeautifulSoup (page, "lxml")
+#            self.debug(self.soup)
         self.purl = f.geturl ()
         self.info = f.info ()
     # end def open
@@ -493,6 +526,11 @@ def main () :
         , default = cfg.get ('vpid_prefix', '')
         )
     cmd.add_argument \
+        ( '--otp-pin'
+        , help    = 'Aladdin 2FA pin, default "%(default)s"'
+        , default = cfg.get ('otp_pin', '')
+        )
+    cmd.add_argument \
         ( '--version'
         , help    = 'Display version and exit'
         , action  = 'store_true'
@@ -521,7 +559,9 @@ def main () :
     result = rq.login ()
     if result :
         rq.call_snx ()
+    
 # end def main ()
+
 
 if __name__ == '__main__' :
     main ()
