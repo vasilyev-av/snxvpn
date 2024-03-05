@@ -8,6 +8,9 @@ import socket
 import rsa
 import ssl
 import time
+import datetime
+import dbus
+
 try :
     from urllib2 import build_opener, HTTPCookieProcessor, Request, HTTPSHandler
     from urllib  import urlencode
@@ -110,7 +113,8 @@ class HTML_Requester (object) :
         sp  = self.args.snxpath
         self.debug(sp)
         if self.args.debug :
-            snx = Popen (['strace', '-o', 'strace_snx', '-s', '2000', '-p' ,sp, '-Z'], stdin = PIPE, stdout = PIPE, stderr = PIPE)
+#            snx = Popen (['strace', '-o', 'strace_snx', '-s', '2000', '-p' ,sp, '-Z'], stdin = PIPE, stdout = PIPE, stderr = PIPE)
+            snx = Popen ([sp, '-Z'], stdin = PIPE, stdout = PIPE, stderr = PIPE)
         else: 
             snx = Popen ([sp, '-Z'], stdin = PIPE, stdout = PIPE, stderr = PIPE)
         stdout, stderr = snx.communicate ('')
@@ -126,9 +130,23 @@ class HTML_Requester (object) :
             f.write (answer)
             f.close ()
         print ("SNX connected, to leave VPN open, leave this running!")
+        remaining = int(self.timeout)
+#        remaining = 70
         try:
             while True:
-                time.sleep(4000000)
+                #time.sleep(4000000)
+                sys.stdout.write("\r")
+                sys.stdout.write(str(datetime.timedelta(seconds=remaining)))
+                remaining = remaining -1
+                if remaining == 600:
+                    self.gnome_notify("Осталось 10 минут")
+                if remaining < 1:
+                    self.gnome_notify("Время сессии вышло")
+                    raise KeyboardInterrupt("Time is out")
+                    break
+                sys.stdout.flush()
+                time.sleep(1)
+
             # answer = sock.recv (4096) # should block until snx dies
         except KeyboardInterrupt:
             sys.stdout.write ('\b\b\r')
@@ -140,6 +158,15 @@ class HTML_Requester (object) :
             except SystemExit:
                 os._exit(0)
     # end def call_snx
+
+    def gnome_notify(self, msg) :
+        try :
+            obj = dbus.SessionBus().get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+            obj = dbus.Interface(obj, "org.freedesktop.Notifications")
+            obj.Notify("", 0, "", "Уведомление SNX", msg, [], {"urgency": 1}, 10000)
+        except Exception as e:
+            print("Notify error", e)
+    #end def gnome_notify
 
     def debug (self, s) :
         if self.args.debug :
@@ -158,6 +185,8 @@ class HTML_Requester (object) :
         gw_ip  = socket.gethostbyname(self.extender_vars ['host_name'])
         gw_int = unpack("!I", socket.inet_aton(gw_ip))[0]
         fmt    = b'=4sLL64sL6s256s256s128s256sH'
+        self.debug(self.extender_vars)
+        self.timeout = self.extender_vars['timeout']
         info   = pack \
             ( fmt
             , magic
@@ -244,7 +273,7 @@ class HTML_Requester (object) :
                 print ("Error: %s" % errorMessage.string)
                 return
 
-            
+
         whileCount  = 0
         while 'MultiChallenge' in self.purl :
             d = self.parse_pw_response ()
@@ -349,6 +378,7 @@ class HTML_Requester (object) :
             if '/* Extender.user_name' in line :
                 break
         stmts = line.split (';')
+        self.debug(stmts)
         vars  = {}
         for stmt in stmts :
             try :
@@ -360,6 +390,7 @@ class HTML_Requester (object) :
             except IndexError :
                 continue
             rhs = rhs.strip ().strip ('"')
+            self.debug(rhs);
             vars [lhs] = rhs.encode ('utf-8')
         self.extender_vars = vars
     # end def parse_extender
@@ -369,7 +400,10 @@ class HTML_Requester (object) :
             one-time password (in our case received via a message to the
             phone) must be entered.
         """
+        self.debug (self.soup.find_all('form'))
+        self.debug (self.soup)
         for form in self.soup.find_all ('form') :
+            self.debug(form)
             if 'name' in form.attrs and form ['name'] == 'MCForm' :
                 self.next_file (form ['action'])
                 assert form ['method'] == 'post'
@@ -469,7 +503,7 @@ def main () :
     cmd.add_argument \
         ( '--ssl-noverify'
         , help     = 'Skip SSL verification default="%(default)s"'
-        , default  = False
+        , default  = cfg.get("ssl-noverify", "SSL_NOVERIFY")
         , required = False
         )
     cmd.add_argument \
@@ -495,7 +529,7 @@ def main () :
     cmd.add_argument \
         ( '-R', '--realm'
         , help    = 'Selected realm, default="%(default)s"'
-        , default = cfg.get ('realm', 'ssl_vpn')
+        , default = cfg.get ('realm', 'ssl_vpn_OTP')
         )
     cmd.add_argument \
         ( '-s', '--save-cookies'
@@ -559,7 +593,7 @@ def main () :
     result = rq.login ()
     if result :
         rq.call_snx ()
-    
+
 # end def main ()
 
 
